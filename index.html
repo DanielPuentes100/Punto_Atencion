@@ -341,8 +341,30 @@ html, body {
 /* ═══════════════════════════════════════════
    CONFIGURACIÓN DE LA API
 ═══════════════════════════════════════════ */
-const GROQ_API_KEY = "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";
+const GROQ_API_KEY = "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";
 const SHEETS_URL = "https://script.google.com/macros/s/AKfycbwGjD0MFaktKWPMJOSqBzOD-Zc5OnHoe4hmuO7UzX8QZ1dIgNcIa41gUCIw_Rapzjy6/exec";
+
+// ═══════════════════════════════════════
+// STORAGE PERSISTENTE (Artifact API)
+// ═══════════════════════════════════════
+const STORAGE_KEY = 'pac_conversaciones';
+
+async function cargarConversaciones() {
+  try {
+    const result = await window.storage.get(STORAGE_KEY);
+    return result ? JSON.parse(result.value) : [];
+  } catch(e) {
+    return [];
+  }
+}
+
+async function guardarConversaciones(convs) {
+  try {
+    await window.storage.set(STORAGE_KEY, JSON.stringify(convs));
+  } catch(e) {
+    console.log('Error guardando:', e);
+  }
+}
 
 // ADMIN
 function abrirAdmin() {
@@ -356,20 +378,42 @@ function cerrarAdmin() {
   document.getElementById('adminPanel').classList.remove('show');
 }
 
-function mostrarConversaciones() {
+async function mostrarConversaciones() {
   const body = document.getElementById('adminBody');
-  const convs = JSON.parse(localStorage.getItem('conversaciones') || '[]');
+  body.innerHTML = '<p style="color:var(--gray-600);font-size:13px;text-align:center;padding:20px;">⏳ Cargando registros...</p>';
+  const convs = await cargarConversaciones();
   if (convs.length === 0) {
     body.innerHTML = '<p style="color:var(--gray-600);font-size:13px;text-align:center;padding:20px;">No hay conversaciones guardadas aún.</p>';
     return;
   }
-  body.innerHTML = convs.reverse().map((c, i) => `
-    <div class="conv-item">
-      <div class="conv-meta">📅 ${c.fecha}</div>
-      <div class="conv-problema">${c.problema}</div>
-      <div class="conv-texto">${c.conversacion}</div>
+  const reversed = [...convs].reverse();
+  body.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <span style="font-size:12px;color:var(--gray-600);font-weight:700;">${convs.length} registro(s) total</span>
+      <button onclick="exportarCSV()" style="background:var(--teal);color:#fff;border:none;border-radius:20px;padding:6px 14px;font-size:11px;font-weight:700;cursor:pointer;">⬇ Exportar CSV</button>
     </div>
-  `).join('');
+    ${reversed.map((c, i) => `
+      <div class="conv-item">
+        <div class="conv-meta">📅 ${c.fecha} &nbsp;|&nbsp; 🆔 #${convs.length - i}</div>
+        <div class="conv-problema">${c.problema}</div>
+        <div class="conv-texto">${c.conversacion.replace(/\n/g,'<br>')}</div>
+      </div>
+    `).join('')}
+  `;
+}
+
+async function exportarCSV() {
+  const convs = await cargarConversaciones();
+  if (!convs.length) return;
+  const header = 'ID,Fecha,Problema,Conversacion\n';
+  const rows = convs.map((c, i) =>
+    `${i+1},"${c.fecha}","${c.problema.replace(/"/g,'""')}","${c.conversacion.replace(/"/g,'""').replace(/\n/g,' | ')}"`
+  ).join('\n');
+  const blob = new Blob(['\uFEFF' + header + rows], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'conversaciones_PAC.csv';
+  a.click(); URL.revokeObjectURL(url);
 }
 
 async function guardarEnSheets() {
@@ -377,10 +421,12 @@ async function guardarEnSheets() {
     (m.role === 'user' ? 'Usuario: ' : 'Orientador: ') + m.content
   ).join('\n');
   const fecha = new Date().toLocaleString('es-CO');
-  // Guardar localmente
-  const convs = JSON.parse(localStorage.getItem('conversaciones') || '[]');
+
+  // Guardar en storage persistente
+  const convs = await cargarConversaciones();
   convs.push({ fecha, problema: problem, conversacion });
-  localStorage.setItem('conversaciones', JSON.stringify(convs));
+  await guardarConversaciones(convs);
+
   // Intentar también enviar a Sheets
   try {
     await fetch(SHEETS_URL, {
@@ -388,7 +434,7 @@ async function guardarEnSheets() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ problema: problem, conversacion })
     });
-  } catch(e) { console.log('Sheets no disponible, guardado local.'); }
+  } catch(e) { console.log('Sheets no disponible, guardado persistente OK.'); }
 }
 
 let problem = '';
@@ -568,7 +614,7 @@ async function askAI(userText) {
   Problemática: ${problem}. 
   Objetivo: Escuchar con empatía, usar lenguaje cálido y ofrecer orientación básica. 
   Si detectas peligro de muerte o violencia extrema, indica llamar al 123. 
-  Sé breve (máximo 3 frases).`;
+  Sé breve (máximo 3 frases). No uses markdown, solo texto plano.`;
 
   const groqMessages = [
     { role: 'system', content: sysPrompt },
