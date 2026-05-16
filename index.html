@@ -345,14 +345,13 @@ const GROQ_API_KEY = "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";
 const SHEETS_URL = "https://script.google.com/macros/s/AKfycbwGjD0MFaktKWPMJOSqBzOD-Zc5OnHoe4hmuO7UzX8QZ1dIgNcIa41gUCIw_Rapzjy6/exec";
 
 // ═══════════════════════════════════════
-// STORAGE PERSISTENTE (Artifact API)
+// STORAGE LOCAL (localStorage - funciona en GitHub Pages)
 // ═══════════════════════════════════════
 const STORAGE_KEY = 'pac_conversaciones';
 
 async function cargarConversaciones() {
   try {
-    const result = await window.storage.get(STORAGE_KEY);
-    return result ? JSON.parse(result.value) : [];
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
   } catch(e) {
     return [];
   }
@@ -360,7 +359,7 @@ async function cargarConversaciones() {
 
 async function guardarConversaciones(convs) {
   try {
-    await window.storage.set(STORAGE_KEY, JSON.stringify(convs));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(convs));
   } catch(e) {
     console.log('Error guardando:', e);
   }
