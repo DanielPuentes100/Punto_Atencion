@@ -224,6 +224,8 @@ html, body {
 .modal-overlay { position:absolute; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:100; }
 .modal-overlay.show { display:flex; }
 .modal { background:#fff; border-radius:var(--radius); padding:26px 22px; max-width:320px; width:100%; display:flex; flex-direction:column; gap:14px; }
+.btn-finalizar-pulse { animation: finalizarPulse 2s ease-in-out infinite; }
+@keyframes finalizarPulse { 0%,100%{box-shadow:0 4px 15px rgba(39,174,96,.4)} 50%{box-shadow:0 4px 25px rgba(39,174,96,.7)} }
 .toast { position:absolute; top:80px; left:50%; transform:translateX(-50%); background:#e74c3c; color:#fff; padding:10px 20px; border-radius:50px; font-size:13px; z-index:200; opacity:0; pointer-events:none; transition:opacity .3s; }
 .toast.show { opacity:1; }
 
@@ -296,6 +298,11 @@ html, body {
       <div class="chat-input-row">
         <textarea class="chat-input" id="chatInput" placeholder="Escribe aquí..." rows="1" onkeydown="handleKey(event)"></textarea>
         <button class="btn-send" id="btnSend" onclick="sendMsg()">➤</button>
+      </div>
+      <div style="padding:8px 12px 12px;">
+        <button id="btnFinalizar" onclick="finalizarChat()" style="width:100%;padding:12px;border:none;border-radius:50px;background:linear-gradient(135deg,#27ae60,#1e8449);color:#fff;font-family:'Nunito',sans-serif;font-size:14px;font-weight:800;cursor:pointer;display:none;">
+          ✅ Finalizar y Guardar Conversación
+        </button>
       </div>
     </div>
   </div>
@@ -421,10 +428,10 @@ async function guardarEnSheets() {
   ).join('\n');
   const fecha = new Date().toLocaleString('es-CO');
 
-  // Guardar en storage persistente
-  const convs = await cargarConversaciones();
+  // Guardar en localStorage
+  const convs = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
   convs.push({ fecha, problema: problem, conversacion });
-  await guardarConversaciones(convs);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(convs));
 
   // Intentar también enviar a Sheets
   try {
@@ -433,7 +440,21 @@ async function guardarEnSheets() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ problema: problem, conversacion })
     });
-  } catch(e) { console.log('Sheets no disponible, guardado persistente OK.'); }
+  } catch(e) { console.log('Sheets no disponible, guardado local OK.'); }
+}
+
+async function finalizarChat() {
+  if (chatHistory.length < 2) {
+    showToast('Primero escribe algo en el chat.');
+    return;
+  }
+  const btn = document.getElementById('btnFinalizar');
+  btn.disabled = true;
+  btn.textContent = '⏳ Guardando...';
+  await guardarEnSheets();
+  btn.textContent = '✅ ¡Guardado!';
+  btn.style.background = 'linear-gradient(135deg,#1a9e8f,#0d6b60)';
+  setTimeout(() => goTo('s4'), 1200);
 }
 
 let problem = '';
@@ -450,9 +471,7 @@ let aiThinking = false;
 function goTo(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
-  // Guardar conversación al salir del chat
   const prev = screenStack[screenStack.length - 1];
-  if (prev === 's3' && id !== 's3' && chatHistory.length > 1) guardarEnSheets();
   screenStack.push(id);
   document.getElementById('btnBack').classList.toggle('hidden', id === 's1');
   if (id === 's3') {
@@ -582,6 +601,11 @@ function appendBot(t) {
   m.appendChild(d);
   m.scrollTop = m.scrollHeight;
   chatHistory.push({ role: 'model', content: t });
+  // Mostrar botón finalizar después del primer intercambio real
+  if (chatHistory.filter(x => x.role === 'user').length >= 1) {
+    const btn = document.getElementById('btnFinalizar');
+    if (btn) { btn.style.display = 'block'; btn.classList.add('btn-finalizar-pulse'); }
+  }
 }
 
 function showTyping() {
