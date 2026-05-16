@@ -83,8 +83,45 @@ html, body {
   background: none; border: none; color: rgba(255,255,255,0.75);
   font-size: 22px; cursor: pointer; line-height: 1;
   padding: 2px 6px 2px 0; transition: color .15s;
+  flex-shrink: 0;
 }
 .btn-back.hidden { display: none; }
+
+/* Admin button fijo */
+.btn-admin {
+  position: fixed; bottom: 20px; right: 20px;
+  background: var(--teal-dark); color: #fff;
+  border: none; border-radius: 50px;
+  padding: 10px 18px; font-size: 13px; font-weight: 700;
+  cursor: pointer; z-index: 999;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+
+/* Panel admin */
+.admin-panel {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7); z-index: 1000;
+  align-items: center; justify-content: center; padding: 16px;
+}
+.admin-panel.show { display: flex; }
+.admin-box {
+  background: #fff; border-radius: 16px;
+  width: 100%; max-width: 500px; max-height: 80vh;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.admin-header {
+  background: var(--teal-dark); color: #fff;
+  padding: 14px 18px; display: flex; justify-content: space-between; align-items: center;
+  font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 15px;
+}
+.admin-body { flex: 1; overflow-y: auto; padding: 16px; }
+.conv-item {
+  border: 1.5px solid var(--gray-200); border-radius: 12px;
+  padding: 12px; margin-bottom: 12px; background: var(--gray-50);
+}
+.conv-meta { font-size: 11px; color: var(--gray-600); margin-bottom: 6px; }
+.conv-problema { font-weight: 700; color: var(--teal-dark); font-size: 13px; margin-bottom: 6px; }
+.conv-texto { font-size: 12px; color: var(--gray-800); line-height: 1.5; white-space: pre-wrap; max-height: 120px; overflow-y: auto; }
 
 .screen { display: none; flex-direction: column; flex: 1; animation: fadeUp .28s ease; }
 .screen.active { display: flex; }
@@ -284,11 +321,121 @@ html, body {
   <div class="toast" id="toast"></div>
 </div>
 
+<!-- Botón admin -->
+<button class="btn-admin" onclick="abrirAdmin()">🔐 Admin</button>
+
+<!-- Panel admin -->
+<div class="admin-panel" id="adminPanel">
+  <div class="admin-box">
+    <div class="admin-header">
+      <span>📋 Conversaciones guardadas</span>
+      <button onclick="cerrarAdmin()" style="background:none;border:none;color:#fff;font-size:20px;cursor:pointer;">✕</button>
+    </div>
+    <div class="admin-body" id="adminBody">
+      <p style="color:var(--gray-600);font-size:13px;text-align:center;padding:20px;">Cargando...</p>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ═══════════════════════════════════════════
    CONFIGURACIÓN DE LA API
 ═══════════════════════════════════════════ */
 const GROQ_API_KEY = "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";
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbwGjD0MFaktKWPMJOSqBzOD-Zc5OnHoe4hmuO7UzX8QZ1dIgNcIa41gUCIw_Rapzjy6/exec";
+
+// ═══════════════════════════════════════
+// STORAGE PERSISTENTE (Artifact API)
+// ═══════════════════════════════════════
+const STORAGE_KEY = 'pac_conversaciones';
+
+async function cargarConversaciones() {
+  try {
+    const result = await window.storage.get(STORAGE_KEY);
+    return result ? JSON.parse(result.value) : [];
+  } catch(e) {
+    return [];
+  }
+}
+
+async function guardarConversaciones(convs) {
+  try {
+    await window.storage.set(STORAGE_KEY, JSON.stringify(convs));
+  } catch(e) {
+    console.log('Error guardando:', e);
+  }
+}
+
+// ADMIN
+function abrirAdmin() {
+  const pass = prompt('Contraseña admin:');
+  if (pass !== 'admin123') { alert('Contraseña incorrecta'); return; }
+  document.getElementById('adminPanel').classList.add('show');
+  mostrarConversaciones();
+}
+
+function cerrarAdmin() {
+  document.getElementById('adminPanel').classList.remove('show');
+}
+
+async function mostrarConversaciones() {
+  const body = document.getElementById('adminBody');
+  body.innerHTML = '<p style="color:var(--gray-600);font-size:13px;text-align:center;padding:20px;">⏳ Cargando registros...</p>';
+  const convs = await cargarConversaciones();
+  if (convs.length === 0) {
+    body.innerHTML = '<p style="color:var(--gray-600);font-size:13px;text-align:center;padding:20px;">No hay conversaciones guardadas aún.</p>';
+    return;
+  }
+  const reversed = [...convs].reverse();
+  body.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <span style="font-size:12px;color:var(--gray-600);font-weight:700;">${convs.length} registro(s) total</span>
+      <button onclick="exportarCSV()" style="background:var(--teal);color:#fff;border:none;border-radius:20px;padding:6px 14px;font-size:11px;font-weight:700;cursor:pointer;">⬇ Exportar CSV</button>
+    </div>
+    ${reversed.map((c, i) => `
+      <div class="conv-item">
+        <div class="conv-meta">📅 ${c.fecha} &nbsp;|&nbsp; 🆔 #${convs.length - i}</div>
+        <div class="conv-problema">${c.problema}</div>
+        <div class="conv-texto">${c.conversacion.replace(/\n/g,'<br>')}</div>
+      </div>
+    `).join('')}
+  `;
+}
+
+async function exportarCSV() {
+  const convs = await cargarConversaciones();
+  if (!convs.length) return;
+  const header = 'ID,Fecha,Problema,Conversacion\n';
+  const rows = convs.map((c, i) =>
+    `${i+1},"${c.fecha}","${c.problema.replace(/"/g,'""')}","${c.conversacion.replace(/"/g,'""').replace(/\n/g,' | ')}"`
+  ).join('\n');
+  const blob = new Blob(['\uFEFF' + header + rows], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'conversaciones_PAC.csv';
+  a.click(); URL.revokeObjectURL(url);
+}
+
+async function guardarEnSheets() {
+  const conversacion = chatHistory.map(m =>
+    (m.role === 'user' ? 'Usuario: ' : 'Orientador: ') + m.content
+  ).join('\n');
+  const fecha = new Date().toLocaleString('es-CO');
+
+  // Guardar en storage persistente
+  const convs = await cargarConversaciones();
+  convs.push({ fecha, problema: problem, conversacion });
+  await guardarConversaciones(convs);
+
+  // Intentar también enviar a Sheets
+  try {
+    await fetch(SHEETS_URL, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ problema: problem, conversacion })
+    });
+  } catch(e) { console.log('Sheets no disponible, guardado persistente OK.'); }
+}
 
 let problem = '';
 let chatHistory = [];
@@ -304,10 +451,12 @@ let aiThinking = false;
 function goTo(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
+  // Guardar conversación al salir del chat
+  const prev = screenStack[screenStack.length - 1];
+  if (prev === 's3' && id !== 's3' && chatHistory.length > 1) guardarEnSheets();
   screenStack.push(id);
   document.getElementById('btnBack').classList.toggle('hidden', id === 's1');
   if (id === 's3') {
-    // Siempre reiniciar el chat al entrar a la pantalla
     chatHistory = [];
     document.getElementById('messages').innerHTML = '';
     initChat();
